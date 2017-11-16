@@ -1,0 +1,22 @@
+The Image Interface code consists of the following files:
+
+cppCasaImageInterface.cpp
+	This is the main interface that contains functions for:
+		i.reading from a 256-level grayscale bitmap file
+		ii. writing to a 256-level grayscale bitmap file
+		iii. writing to a CASA image
+
+cppTestCasaImageInterface.cpp
+	This is an example program which shows how to use the interface. It will load an image of the Lovell telescope from the supplied bitmap file and write it to a CASA image
+
+lovell.bmp
+	An example image for testing
+
+makefile
+	An example of how to compile the code. We compile the interface and the program that calls the interface.
+	The first line of the makefile is the pathname of the casacore folder, and should be updated before attempting to compile.
+
+
+System requirements:
+
+Casacore MUST be installed for the interface to work.
