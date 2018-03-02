@@ -1,0 +1,2 @@
+aisp2casa.py - Tool to convert AIPS calibration tables (BP, CL or SN)
+	into CASA calibration tables

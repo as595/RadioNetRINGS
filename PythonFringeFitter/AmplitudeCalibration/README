@@ -1,0 +1,17 @@
+gc.py - script to create a gain curve table that can be used as input
+	to gencal from an ANTAB file
+
+append_tsys.py - script to read Tsys values from an ANTAB file and
+	append them as a SYSTEM_TEMPERATURES table to a FITS-IDI file
+
+tsys_spectrum.py - script to import (and interpolate/extrapolate) Tsys
+        values from an ANTAB file
+
+fixms.py - script to add CORRECTED_DATA column; significantly speeds
+        up subsequent invocations of applycal
+
+calibration.py - example of amplitude calibration
+
+key.py - support module to read files in KEYIN format
+
+msutil.py - support module for fixms.py

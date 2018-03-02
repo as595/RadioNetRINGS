@@ -1,0 +1,170 @@
+\documentclass[11pt, twoside, a4paper]{article}
+\usepackage{color}
+\usepackage{charter}
+\usepackage{tikz-cd}
+\usepackage[ruled]{algorithm2e}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{upquote}
+\usepackage{appendix}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{url}
+\usepackage[T1]{fontenc}  % access \textquotedbl
+\usepackage{textcomp}     % access \textquotesingle
+%\usepackage[backend=bibtex,natbib=true,
+%            citestyle=authoryear,style=authoryear,
+%            maxcitenames=2,maxbibnames=10]{biblatex}
+\usepackage{authblk}
+% \bibliography{papers}
+\mathchardef\mhyphen="2D
+\author[1]{Des Small}
+\affil[1]{JIVE}
+\title{Delay-rates and/or phase-rates in fringe-fitting}
+\bibliographystyle{alpha}
+\begin{document}\sloppy
+\usetikzlibrary{decorations.pathmorphing}
+\maketitle
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true}
+
+\section{Introduction}
+In fringe-fitting we compensate for instrumental and atmospheric delays
+and delay-rates in the signal paths of the data reaching the correlator
+by means of a correction applied \emph{after} correlation.
+
+The delay term (more properly, the \emph{group delay}\cite{petrov11})
+is computed as the gradient of the phase across a frequency band.  It
+has units of seconds; it corresponds to a physical delay; it is not a
+fertile source of confusion or controversy. The second term usually
+included in fringe-fitting is related to the observed rotation of the
+correlation phasor as a function of time, and this term is more subtle.
+We show the relation between the two popular perspectives on this term
+(``phase-rate'' and ``delay-rate'') and discuss their implications for
+calculating, storing and applying calibration terms in the
+fringe-fitting process.
+
+\section{Phase rates and/or delay rates}
+The first sign of trouble came when we compared plots of delay-rates
+from AIPS FRING routine (see for example \cite{mao15}), which use by
+default a y-axis scaled in millihertz with the textual form of the
+results from the same routine, which are given in a dimensionless (or s/s) form.
+
+Appendix C of the AIPS manual (p. C-42) defines the ``residual phase''
+stored in solution and calibration tables as a result of fringe fitting
+as follows
+\begin{equation}\label{eq:aips:rate}
+  \begin{split}
+    \Phi_{i,c}(\nu, t) = &2\pi\left\{\nu_{i,0} - \nu_{0,0}\right\} \mathit{MB} \\
+    + &2\pi\left\{\nu_{i,c} - \nu_{i,0}\right\} \mathit{SB}_i \\
+    + &2\pi \nu_{i,c} \left\{t-t_0\right\} \mathit{RATE} + \theta_{i,c} 
+  \end{split}
+\end{equation}
+for channel $c$
+of IF $i$,
+where $\mathit{MB}$
+is the multi-band delay, $\mathit{SB}_i$
+is the single-band delay for band $i$,
+$\mathit{RATE}$
+is the delay rate and $\theta_{i,c}$
+is the ``peculiar phase'' for an IF and channel. (We preserve the
+manual's notation and terminology for convenience in
+cross-referencing.) 
+
+It is the $\mathit{RATE}$ that is stored, in dimensionless (s/s) form,
+in the calibration form in the solution (``SN'') and, when applied,
+calibration (``CL'') tables. As Equation~\ref{eq:aips:rate} shows, this
+rate is multiplied separately with the frequency of each spectral
+channel when it the correction is applied.
+
+It turns out that the values are stored in the orthodox
+dimensionless form (s/s) in the solution tables, but for presentation
+they are scaled up by the frequency of the carrier wave, since the
+period of those waves determine the ``ambiguity time'' of the results.
+
+During the actual fringe fitting process itself, however, the
+natural\footnote{Sadly, English lacks a convenient equivalent for ``voor de
+  hand liggend''.} 
+form of the same quantity is that of a phase-rate, as in the
+expression given by Schwab and Cotton\cite{schwab83} for baseline
+visibilities $\widetilde{V}_{ij}$, of the form
+\begin{equation}\label{eq:phaserate}
+  \begin{split}
+  \widetilde{V}_{ij}(t_k, v_l) &\simeq a_i a_j \mathcal{V}_{ij}(t_0, \nu_0) 
+  \exp
+  \left\{i
+    \left[(\psi_i-\psi_j)(t_0, \nu_0) \right]
+  \right\} \\
+  &\times\exp
+  \left[i\left(
+      \left.
+        \frac{\partial (\psi_i-\psi_j + \phi_{ij})}{\partial t}
+      \right|_{t_0, \nu_0} (t_k-t_0) \right.\right.
+        \\
+      &+ \left.\left.\left.
+        \frac{\partial (\psi_i-\psi_j + \phi_{ij})}{\partial \nu}
+      \right|_{t_0, \nu_0} (\nu_l-\nu_0)
+      \right] \right),
+  \end{split}
+\end{equation}
+with a true visibility of $\mathcal{V}_{ij}$,
+antenna gains of $a_i$,
+a model term of $\phi_{ij}$,
+and a grid of times, $t_k$,
+and frequencies, $\nu_l$ with origin at $t_0, \nu_0$.
+
+This is the form used for the 2-dimensional Fourier transform; the
+baseline delay-rate term in this form is 
+\[
+\left.\frac{\partial (\psi_i-\psi_j)}{\partial t} \right|_{t_0,
+    \nu_0} (t_k-t_0),
+\]
+corresponding to a station-based rate which can be equated with the
+AIPS form as follows,
+\begin{equation}
+  \frac{\partial \psi_i}{\partial t} (t_k - t_0) \simeq
+  2\pi \nu_{i,c} \left\{t-t_0\right\} \mathit{RATE}.
+\end{equation}
+
+It is interesting to note that the peak of the two-dimensional Fourier
+transform defines a \emph{single} phase rate across the band, as do
+the global non-linear refinements subsequently applied by AIPS FRING procedure;
+converting this to a delay-rate in seconds per second requires the
+choice of a reference frequency to divide by, and when it is scaled
+back up by the channel frequencies it will be slightly (and arguably
+artificially) different across the band. But our bands are narrow and
+our goal is simple: we want to do what AIPS does, because that's what
+the VLBI community wants. It is suspected that AIPS uses the lower
+edge of the frequency band as its reference frequency (for both upper
+and lower subbands, since it doesn't make such a distinction).
+
+For many astronomical purposes, a crucial concept is the
+\emph{ambiguity time}, defined as the time for a full cycle of the
+phasor, i.e., the reciprocal of the sky frequency of the wave. When the
+delay rate multiplied by the time of a scan approaches the ambiguity
+time or, equivalently, when the phase has wrapped around by $2\pi$.
+For C-band at $5\,\mathrm{GHz}$ a (high) rate of
+$1\,\mathrm{ps}/\mathrm{s}$ corresponds to $5\,\mathrm{mHz}$, so that
+phase will wrap in $200\,\mathrm{s}$.
+
+\section{Conclusion}
+For some purposes (notably, for comparison with CALC's model
+coefficients and checking station clocks) it is convenient to think of
+delay rates in seconds per second; in other cases it is handier to
+think in terms of radians per second. AIPS converts freely between the
+two, and we should follow its example wherever possible down to the
+finest detail.
+
+
+\bibliography{fringe}
+\end{document}
+
+\begin{figure}
+  \centering
+  \includegraphics[height=8cm]{afigure.eps}
+  \caption{A caption}
+  \label{fig:finalEngine}
+\end{figure}
+
+
+
+

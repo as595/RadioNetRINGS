@@ -1,0 +1,187 @@
+\documentclass[11pt, twoside, a4paper]{article}
+\usepackage{color}
+\usepackage{charter}
+\usepackage[ruled]{algorithm2e}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{url}
+\usepackage{upquote}
+\usepackage{appendix}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage[T1]{fontenc}  % access \textquotedbl
+\usepackage{textcomp}     % access \textquotesingle
+\usepackage[backend=bibtex,natbib=true,
+            citestyle=authoryear,style=authoryear,
+            maxcitenames=2,maxbibnames=10]{biblatex}
+\usepackage{authblk}
+\bibliography{fringe}
+
+\mathchardef\mhyphen="2D
+\author[1]{Des Small}
+\affil[1]{JIVE}
+\title{Fringe fitting in Casa -- deriving, storing and applying coefficients}
+\begin{document}\sloppy
+\maketitle
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true}
+
+\section{Introduction}
+This report briefly sets out the definition of parameters used in the
+fringe fitting routines we are adding to Casa, and sketches how we
+calculate store and apply the values of the parameters. It is primarily
+intended to record the design decisions made about reference
+frequencies and times used to index the parameters; it will be seen
+that we follow the example of AIPS wherever possible. It is explicitly
+not intended as a tutorial on fringe fitting or a detailed account of
+our methods.
+
+Note that we do not currently implement a facility for using a source
+model of a phase-reference source; this will need to be implemented in
+a later release.
+
+\section{A model of station phases}
+We assume that the observed behaviour of phase on each baseline can be
+modeled as the combination of antenna-based effects.
+
+For an antenna indexed with $l$,
+and visibility data on a grid of $f_i$
+in frequency and $t_j$
+in time, we model the phase of the visibilities as the first-order
+Taylor series around a reference point $(f_\mathrm{ref}, t_\mathrm{ref})$.
+
+\begin{equation}
+  \phi_l(f, t) \approx \phi_{\mathrm{ref}, l} + 
+  \frac{\partial \phi_l}{\partial f} \delta f +
+  \frac{\partial \phi_l}{\partial t} \delta t
+\end{equation}
+where
+\begin{align}\label{eq:pardef}
+   \phi_{\mathrm{ref},l} &= \phi_l(f_{\mathrm{ref}}, t_{\mathrm{ref}}) \\
+   \delta f &=  f - f_{\mathrm{ref}} \\
+   \delta t &= t -t_{\mathrm{ref}}
+\end{align}
+For compactness of notation we replace the partial derivatives with the
+group delay, $\tau_l$ and phase delay rate, defined as
+$r_l$ as 
+\begin{align}
+  \tau_l &= \frac{\partial \phi_l}{\partial f} \\
+  r_l &= \frac{\partial \phi_l}{\partial t},
+\end{align}
+where we use the terminology, but not the symbols, of \cite{petrov11}.
+
+In fringe fitting we do not consider the magnitudes of the
+visibilities, only the phases, and we model the relative phase of a
+baseline between two antennas with indices $l$
+and $m$ as the difference between their modeled phases of the two antennas.
+
+Accordingly we define the complex model unit
+visibilities, $\hat{\mathcal{V}}$, by
+\begin{equation}\label{eq:model}
+\hat{\mathcal{V}}_{lm} \approx \exp\left(\mathfrak{j} \left\{
+    \Delta \phi_{\mathrm{ref}, lm} + 
+    2\pi \Delta \tau_{lm} f + 
+    2\pi \Delta r_{lm} t
+    \right\}
+    \right),
+\end{equation}
+where the hat denotes the normalisation of the visibilites; we use
+Fraktur $\mathfrak{j}$
+for the square root of minus one to keep Roman letters free for
+subscripts; and we introduce the shorthand notation for differences
+that
+
+\begin{align}\label{eq:diffabbr}
+  \Delta \phi_{\mathrm{ref}, lm} &=   \Delta \phi_{\mathrm{ref}, l} -   \Delta \phi_{\mathrm{ref}, m} \\
+  \Delta \tau_{lm}  &=   \Delta \tau_{l} - \Delta \tau_{m} \\
+  \Delta r_{lm}  &=   \Delta r_{l}  -   \Delta r_{m} 
+\end{align}
+
+We have assumed that visibilities are provided on a grid of frequency
+points and times defined by the spectral channels and integration time
+(or ``accumulation time'') of the correlator for each subband
+(``spectal window'' in Casa, ``IF'' in AIPS), so that the comparison
+between the model and the data is made on a uniform grid of frequency
+$f_i$
+and time $t_j$,
+although some data may of course be flagged. The interval of time used
+in a single fringe fit is referred to as a ``solution interval''; it
+may not be -- and often isn't -- the same as the length of a ``scan''
+(defined as a continuous observation of a single source).
+
+In the case of multi-band fringe-fitting we currently assume that all
+spectral windows share the same frequency spacing and are almost
+contiguous.  In practice, upper and lower sidebands from the same
+frequency down conversion will share a DC edge, and the Nyquist channel
+will be omitted, so a little care is needed filling the grid.
+
+Our model of phase on baseline $l$-$m$, either for a single subband or
+for the full set of bands, at the point $(f_i, t_j)$ is thus
+\begin{equation}\label{eq:discmodel}
+\hat{\mathcal{V}}_{lm, ijXS} = \exp\left(\mathfrak{j} \left\{
+      \Delta \phi_{\mathrm{ref}, lm} +     
+      2\pi \Delta \tau_{lm, ij} (f_{i} - f_{ref}) + 
+      2\pi \Delta r_{lm, ij} (t_{j} - t_{ref})
+ \right\}
+\right).
+\end{equation}
+
+\section{Computing, storing and applying the model}
+\subsection{Computing}
+
+We want to solve for the parameters $\phi_{\mathrm{ref}, l}$,
+$\tau_l$
+and $r_l$
+for each antenna, but we only have data about differents between
+parameters from baselines formed from pairs of antennas.  To fix an origin
+we designate one antenna as the \emph{reference antenna}, for which all
+the parameters are defined as zero.
+
+The full details of the solution process are beyond the scope of this
+note, but in brief: we use the baselines to the reference antenna to
+produce preliminary estimates of the antenna parameters via a
+two-dimensional Fourier transform, and then we feed those estimates to
+a global least-squares solver for refinement. 
+
+We choose the centre time and frequency point for our reference values
+($t_{\mathrm{ref}})$, $f_{\mathrm{ref}}$ in Equation~\ref{eq:pardef}),
+where we restrict the time range for 
+
+\subsection{Storing and applying}
+The calculated parameters then have to be stored in a Casa calibration
+table using the \texttt{gencal} routine, and can then be applied by the
+\texttt{applycal} routine. For this purpose, all the routines involved
+have to agree on the reference time and frequency for which values are
+reported. In particular, since the \texttt{applycal} routine is being
+extended to support delay rates as part of the current project to
+implement VLBI support in Casa, we need to \emph{define} these
+reference values.
+
+Following the established practice of AIPS -- the \emph{de facto}
+standard for VLBI data processing -- we use the centre frequency in an
+frequency band as the reference frequency, regardless of whether the
+frequency band is labelled as an upper or lower sideband, and ignoring
+the \texttt{REF\_FREQUENCY} column in the Measurement Set
+\texttt{SPECTRAL\_WINDOW} table, which is intended to record a fact
+about the observation. More than one definition of ``centre'' is
+possible; we propose to define the centre frequency as the
+$\frac{n}{2}$th
+frequency point in a band of $n$
+frequency points, where the first (or rather, zeroth) point is the
+lowest frequency in the band.
+
+When calculating the model parameters we divide the data in the time
+dimension into what, again following AIPS, we call ``solution
+intervals''; it is good practice to make this interval shorter
+than the coherence time of the atmosphere. The AIPS convention, which
+we once again adopt, is to use the center of the solution interval as
+the reference time for the parameters.
+
+\end{document}
+
+% \begin{figure}
+%   \centering
+%   \includegraphics[height=8cm]{afigure.eps}
+%   \caption{A caption}
+%   \label{fig:finalEngine}
+% \end{figure}
+

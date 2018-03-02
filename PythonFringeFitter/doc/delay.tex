@@ -1,0 +1,354 @@
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc} 
+\usepackage{mathtools}
+\title{JIVE Uniboard Correlator [JUC] Memo 002: On scaling delays}
+\author{Des Small}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+In the course of implementing the support for model generation and distribution in the correlator control system it emerged that there were some places in which the coverage of delay and phase models in the EVN Correlator Design document\cite{unib} were unclear or underspecified. 
+
+The purpose of this document is to fill in all gaps in the JUC teams understanding of delay models and their implementation.  In the process, I have consulted consulted documentation from the Mark 4 and SFXC correlators and spoken with Bob Campbell, Sergei Pobrenko (designer of the software  correlator that was later the basis for SFXC), and Mark Kettenis and Aard Keimpema of the SFXC team.  I am grateful for their assistance and patience.  Any remaining misunderstandings are my own fault, however.  (And I'd be glad to hear about them.)
+
+\section{Off-board handling of delay and phase models}
+The original plan for treatment of delay and phase models in the EVN Uniboard-based correlator was to stay as close as possible to the SFXC software correlator.
+
+In particular, we originally envisaged a pipeline along the following lines:
+
+\begin{itemize}
+\item CALC evaluated at 1 second intervals to provide coarse-grid values
+\item Akima splines evaluated at $\frac{1}{32}$ seconds (fine-grid   values), since this is the frequency actually required by the   Uniboard-based correlator
+\item Quadratic polynomials (as required by correlator) calculated from successive groups of three points on fine grid
+\item Phase polynomials calculated from (floating point) delays
+\item Polynomials discretised and sent to correlator
+\end{itemize}
+
+The plan was that staying close to SFXC's methodology would mean we wouldn't have to reinvent any wheels.  However, it turns out that things aren't quite so simple.
+
+Özdemir\cite{hus} showed that Akima's method can interpolate model delays to machine precision (for doubles, around $10^{-16}$) using a relatively coarse (1 second) grid on which linear and cubic interpolation have accuracy of only about $10^{-15}$.  (In the maximum norm in both cases.)
+
+However, this effectively solves the problem of ``which interpolation method is as good as evaluating CALC at each clock tick, given that we are using double precision?''  Note that $10^{-15}$ corresponds to $2^{-50}$ so calculating to this accuracy requires 50 bits after the binary point, which is larger than any of the registers discussed in this document.
+
+This is therefore not quite the question we need to answer here.  We need to find a treatment of the model that is ``good enough'' given much more modest resources.
+
+In particular, we do not have any form of floating point.  This is the reason that the phase models for the Uniboard correlator have to be calculated off-board - the integer/fixed-point value of the delay doesn't have enough resolution to scale up for the phase delays.
+
+\section{JUC rationale}
+
+Sergei Pobrenko has explained that:
+
+Delay registers use fixed binary point, with the integer part used to shift an entire FFT block at once based on the time of (say) the centre sample of the block (rather than individual samples).  He argues that shifting the FFT block makes the quadratic component of the delay model more critical, although I cannot currently see why.
+
+The four most-significant bits after the binary point in delay model are used as an index into a lookup table containing phase corrections to apply to the samples. (As the Design Document\cite{unib} clearly states on p.20).  What had not previously been clear to me, however, is that it is envisaged that the delay registers would have considerably more bits after the binary point than this, in order to avoid degrading accuracy by underflowing small values.  (The Design Document doesn't seem to say where the binary point should be placed.)
+
+As we shall see, it is not practical to have all of
+\begin{itemize}
+\item 32-bit delay registers;
+\item The ability to handle ``worst-case'' space VLBI;
+\item Enough fractional bits to avoid underflow; and
+\item The same number of fractional bits for delay, delay rate and delay acceleration registers
+\end{itemize}
+
+The last requirement is apparently not that firm, and we will certainly want to violate it.
+
+The use of the four most significant bits of the fractional delay for the phase-correction lookup is driven by the fact that the phase-correction vector is discretized at a comparable precision.
+
+Clearly, all of the phase registers are after the binary point.  The choice of a 48-bit phase register was made so that phase rate is resolved to precision of 0.01 samples/s over a full 24-hour observation.  ($32\times10^6 \mathrm{samples}/s^2 \times 2^{-48} \times 24 h ~ 0.01 \mathrm{samples}/s$).
+
+
+\section{Space constraints}
+
+The worst case space delay and delay rates are those associated with the Radio Astron space telescope; these are 2~s (according to Pogrebenko) and 50~$\mu$s/s (according to Dmitry Duev).
+
+A 2~s delay corresponds to $64\times10^{32}$~clicks, which takes up 26 bits of the delay register for the integer delay, leaving 6 bits for the fractional part.  This isn't a lot of scope to handle underflow, and certainly isn't adequate to handle the delay rate with the same fixed point placement (see Equation~\ref{eq:scalesdd} below).  
+
+In Section~\ref{adjust} Hargreaves raises the possibility of using different scales for delay itself and delay rate, which would solve this problem.
+
+A 50~$\mu s/s$ delay rate corresponds to 1600~clock ticks, or 11 bits. This is also not compatible with Hargreaves' proposal to use effectively 28 bits of the 32-bit delay rate register after the binary point.
+
+In short, if the worst-case space requirements really are this bad, and I haven't made a mistake with the calculations, then it is not practical to use the proposed register sizes for space applications.
+
+\section{Terrestrial Delays}
+\subsection{A priori calculations}
+\label{sec:intro}
+A brief note on the scaling of delay polynomials.  If we use clock
+ticks for input and output, my calculations show the coefficients of
+the delay polynomials, apart from the constant term, will always be
+zero.
+
+We begin by calculating the diurnal delay (due to the rotation of the
+earth),
+
+\begin{equation}
+  \label{eq:delay}
+\mathrm{delay} = \frac{R}{c} \cos\Omega t  
+\end{equation}
+
+\begin{equation}
+  \label{eq:drate}
+  \frac{d}{dt}\,\mathrm{delay} = -\frac{R}{c} \Omega \sin\Omega t  
+\end{equation}
+
+\begin{equation}
+  \label{eq:drate2}
+  \frac{d^2}{dt^2}\,\mathrm{delay} = -\frac{R}{c} \Omega^2 \cos\Omega t    
+\end{equation}
+
+Plugging in the numbers ($\Omega = 2\pi/(24\times 60\times 60) =
+7.3\times 10^{-5} \mathrm{radians}/\mathrm{s}$, $R = 6.4\times 10^6 m$) get
+
+\begin{eqnarray}
+\mathrm{delay} &\approx& 0.02 \mathrm{s} \label{eq:scales}\\
+\frac{d}{dt}\,\mathrm{delay} &\approx& 1.6\times 10^{-6}  \label{eq:scalesdd}\\
+\frac{d^2}{dt^2}\,\mathrm{delay} &\approx& 1.13\times 10^{-13} \mathrm{s}^{-1}\label{eq:scalesd2d}.
+\end{eqnarray}
+
+Now consider a Taylor's series approximation to a function $y(x)$:
+
+\begin{equation*}
+  y = y_0 + \frac{dy}{dx} \delta x + \frac{1}{2} \frac{d^2 y}{dx^2} \delta x^2
+\end{equation*}
+
+Suppose we want to calculate the derivatives in $x$ and $y$ but
+evaluate the polynomial in variables $X$ and $Y$, with scaling $Y=Ly$
+and $X=Mx$.  We get
+
+\begin{equation*}
+  Y = L y_0 + \frac{L}{M} \frac{dy}{dx}\delta X + \frac{1}{2}\frac{L}{M^2} \frac{d^2y}{dx^2} \delta X^2
+\end{equation*}
+
+The Uniboard-based correlator uses an internal clock at 32~MHz, and the delay input is given in units of ticks of this clock.  If the output is also on this scale we have $L = M = 3.2\times 10^{7}$.
+
+\begin{eqnarray}
+\label{eqn:toosmall}
+ L\, \mathrm{delay} \approx 6.4\times 10^5 \mathrm{ticks}\\
+\frac{d}{dt}\,\mathrm{delay} \approx 1.6\times 10^{-6}  \\
+\frac{1}{2} \frac{1}{L}\frac{d^2}{dt^2}\,\mathrm{delay} \approx 1.8\times 10^{-21} \mathrm{ticks}^{-1}
+\end{eqnarray}
+
+Now, the time range for the polynomial is $\frac{1}{32} \mathrm{s} =
+1\times10^6\ \mathrm{ticks}$, so that $\delta t^2$ ranges up to $10^{12}
+\mathrm{ticks}$.  But before this can be applied, the coefficients of
+Equation~\ref{eqn:toosmall} have been transmitted as integers, and the
+non-constant terms rounded to zero.
+
+\subsection{Comparison with SFXC}
+The software correlator SFXC uses third-order Akima splines
+for delay and phase on a $1$~s interval.  With this treatment, Aard Keimpema assures me that the delays are identical to those of the model itself down to machine precision.
+
+But the EVN uniboard-based correlator does not have floating point arithmetic, and it is this difference that makes register underflow arithmetic an issue.  
+
+\subsection{Comparison with Mark4 correlator}
+The Mark 4 hardware correlator designed in the 1990s and commissioned in 1998 faced essentially the same issues of model generation as the EVN uniboard-based correlator faces now.  Indeed, the CALC program used to calculate the model is a common feature of both as well as of SFXC.
+
+The Mk4 correlator relies on station units (SUs) to keep the data
+streams synchronised to the nearest sample.  In addition, there are
+two registers dedicated to handle delay: one of 32 bits to accommodate
+a range of $\pm 0.5$ samples, and one of 18 bits for the delay rate,
+used to increment the delay register at each sample.  Since the SUs handle delays to the nearest sample, this means that the full extent of the delay registers is used to handle fractional delays: the resolution is therefore $2^{-32}$ samples.
+
+As Whitney remarks in Mark 4 Memo 131 \cite{m123}:
+\begin{quotation}
+  The maximum delay-rate supported by the 18-bit delay rate register
+  is 1 delay-shift per $2^(32-18)=16384$ samples, which
+  corresponds to $\approx 60$ microsec/sec and is quite adequate for
+  even worst-case space VLBI.
+\end{quotation}
+
+This would also accomodate the anticipated worst-case scenario for Radio Astron.  What is also clear is that the Mk4 correlator's delay resolution of 32 bits for just the fractional part of the delay is considerably better than is currently specified for the EVN uniboard-based correlator.
+
+\subsection{Possible adjustment to Uniboard correlator}\label{adjust}
+In response to a previous draft of this document, Jonathan Hargreaves proposed changing the delay registers from integer values to fixed-point with 8 bits after the binary point, and additionally scaling the delay-rate up by a ``binary million'' ($2^{20}$ or 1048576).  As he says\cite{har2} of this case:
+
+\begin{quotation}
+If we represent your worst case numbers as 32-bit hexadecimals with two digits after the point we get for \ref{eq:scales} 0x09c400.00 and then we scale Equation~\ref{eq:scalesdd} up by a binary million (ie $2^20$ not 1000000) we get 0x000001.ad
+\end{quotation}
+
+We saw above that the Mark 4 correlator can manipulate delays at a resolution of $2^{-32}$ samples; this proposal only resolves down to $2^-8$ for the main delay register.  But this corresponds to $\frac{1}{32\times 10^6}\cdot \frac{1}{2^8} \textrm{s}$ = $1.22\times 10^{-10}$~s, and it is generally understood that delay resolution of less than a nanosecond is good enough for VLBI.
+
+\subsection{Recommendations for delay model}
+I recommend incorporating Hargreave's fixed-point model for delay, with scaled linear coefficient and discarding the quadratic term for delay.
+
+\section{Phase}\label{Phase}
+
+\subsection{Comparison with SFXC}
+SFXC uses floating point arithmetic for fringe phase
+correction, which it calculates internally based on the model delay.
+The model is therefore a third-order Akima spline over an interval of
+1~s interval.  Since SFXC works, we know that this is at
+least good enough, but the possibility remains that it is
+overspecified.
+
+\subsection{Comparison with Mark III correlator}
+The original plan for the Mark 4 correlator was to use a system
+``basically identical''\cite{m101} to that of the Mark III correlator:
+phase delay and phase-rate would both be stored in 32-bit registers,
+and the phase would be incremented by the value of the phase-rate
+register at every sample.  The phase rate and the initial phase would
+be loaded at the beginning of each integration period of 20,000
+samples.  With a 32~MHz sample rate, this implies a model duration of
+1/1600~s..
+
+Whitney states\cite{m101} that this linear scheme ``is quite acceptable for all anticipated ranges of phase-rate and phase-acceleration, including even the worst-case space VLBI scenario''.
+
+\subsection{Comparison with Mark 4 correlator}
+The Mark 4 correlator subsequently adopted a scheme with phase
+corrections modeled by second-order polynomials over a longer
+interval.  Whitney writes\cite{m101} that the primary motivation for
+this was ``to allow significant lengthening of the basic chip
+integration period, with a corresponding reduction in the DSP
+horsepower necessary to support the chip''.
+
+The software for Mark5B data recorder includes a support for emulation
+of a Mark 4 SU; the code is the same as that in the SU itself
+(according to Bob Eldering).  The SU gets the model as a quintic
+polynomial valid for 2 minutes; it then interpolates down to quadratic
+polynomials each valid for a single correlator frame, as with the
+delay model.  The conversion to a quadratic is followed by a
+discretision step that converts the floating point coefficients into
+values for three 32-bit registers.  All the subtleties occur in this
+last step; Alan Whitney's document \cite{m101} is indispensible in
+understanding the implementation.
+
+Since the phase is stored in units of periods it wraps at 1, and the
+resolution is therefore $\frac{1}{2^{32}}$ periods.
+
+The phase register is updated every $k$ Mark 4 system clicks
+(``sysclicks'') by incrementing it with the contents of the phase-rate
+register; the phase-rate register is updated every $n$ sysclicks, by
+incrementing it with the value of the phase-acceleration register.
+
+The SU code includes the following definitions for the coefficients
+of the phase polynomial:
+
+\begin{eqnarray}
+  \phi_{d, 0} &=& 2^{32} \textrm{frac}(q_0) + \frac{1}{4} delay[0] \frac{f_{sb}}{f_{os}} \\ 
+  \phi_{d, 1}  &=& 2^{32} \left( \frac{k}{f_{sys}} q_1 + 
+    \frac{n k}{f_{sys}^2} \frac{q_2}{2}\right) +   k \frac{1}{4} delay[1]  \frac{f_{sb}}{f_{os}}\\
+  \phi_{d, 2} &=& 2^{32} \frac{n k}{f_{sys}^2} q_2 \label{eq:mk4d2phi}
+\end{eqnarray}
+
+where the first two coefficients include a correction for oversampling
+($f_{os}$) and fractional bit correction, depending on the net
+sideband ($f_{sb}=\pm 1$); these are described in \cite{mk4}.
+
+The $\phi_{d, 1}$ term is the most surprising.  Alan Whitney
+explains\cite{m101} that ``The second contribution to phase error is
+due to unmodelled phase-acceleration over the $n$ samples over which
+the phase-rate is held constant.  This is simply given by $\phi =
+\frac{1}{2} a \left(\frac{n}{f}\right)^2$." (Where $a$ is the value of
+phase-acceleration over the interval.)  Whitney's correction factor is
+for phase; the code adds a term to the phase-rate which is used to
+increment the phase value itself, so that the correction is added
+linearly.  The correction is of course rescaled by $k/n$ to
+accommodate the different update rates of the two registers.
+
+An important point to note is that the second order coefficient in the
+phase correlator is not that important in the Mark 4 correlator: Bob
+Campbell tells me that it was in fact zeroed out in Albert Bos's code,
+with no noticeable ill effects.  
+
+Roger Cappallo \cite{mk4prob} remarked in 2003 -- five years after the
+Mark 4 correlator was commissioned -- that ``the old model chose
+values of $n$ so small that for many baselines the appropriate value
+of the acceleration register was less than 0.5, and was rounded down
+to zero.''  The algorithm was then changed to reduce round-off errors,
+with the result that ``$n$ is typically a 4 or 5 digit number''.
+
+This is for a correlator frame that is ``nominally 500 ms'' long, so
+approximately $10^{10}$ systicks long.  But the EVN Mark IV
+correlator, as mentioned above, does without it altogether.
+
+(The value of $n$ is currently chosen to be $n = ROUND
+\left(\frac{1}{2} cf\_len^2\right) ^ \frac{1}{3} sys\_per\_stn$, where
+the parameters are baseline dependent.)
+
+\subsection{A priori calculation}
+
+Checking the JIVE experiment database for all experiments since its introduction, we find a frequency range from 312~MHz up to  22,392.49~MHz.
+
+Scaling equations~\ref{eq:scales} by these frequencies in units of system ticks we have
+
+\begin{eqnarray}
+  \label{eq:phasescaleticks}
+1.5\times 10^{-5} \mathrm{ticks}^{-1} &<& \frac{d}{dt}\phi < 1.1\times 10^{-3} \mathrm{ticks}^{-1} \\ 
+3.4\times 10^{-17} \mathrm{ticks}^{-2} &<& \frac{d^2}{dt^2}\phi < 2.5\times 10^{-15} \mathrm{ticks}^{-2}
+\end{eqnarray}
+
+With a 48-bit register and a maximum value of 1, we can store values
+down to $\frac{1}{2^{48}} = 3.6\times 10^{-15}$, with the result that
+we can store $\dot{\phi}$ coefficients unchanged, but that
+$\ddot{\phi}$ coefficients underflow even a 48-bit register.
+
+If we really want to keep the second-order term in the polynomial and have it be used, we would again have to resort to a kind of fixed point arithmetic in the spirit of the Mark 4 correlator's parameter $n$.
+
+Over a time range of $1\times 10^6$~clicks, the value of $\ddot{\phi} t^2$ ranges from $3.4\times 10^{-5}$ to $2.5\times 10^{-3}$, and this is a pertinent reminder that we really ought to have figured out at some point whether this is important or not.  What accuracy do we actually \emph{need} for phase?
+
+\subsection{The question that should have been asked first}
+How accurate does the phase model need to be?  Hargreaves and Verkouter\cite{unib} (p. 20) say that the 9 most-significant bits of the phase model are added to the phase input.
+
+\subsection{Discussion and tentative conclusions on phase}
+After contemplating the Mark 4 correlator algorithms, it is good to
+remind ourselves that SFXC simply evaluates a cubic Akima
+spline for the model for every sample.  Simply not having the
+equivalent of the Mark 4 correlator's $k$ and $n$ parameters should
+eliminate most of the quirks of the Mark 4 system.
+
+However, the increase in register size for phase polynomial coefficients from 32 to 48 bits apparently isn't enough to compensate for the loss of $k$ and $n$.
+
+Given that the EVB Mark 4 correlator has in practice ignored the quadratic phase correction for much if not all of its working life, I would be inclined to recommend using a linear phase correction model for the EVN uniboard-based correlator over its preferred $\frac{1}{32}$~second interval.  
+
+\section{Conclusions}
+It seems that both the delay and phase models can actually be handled by linear interpolation over the desired time-range of $\frac{1}{32}$~s.  For delay, fixed point arithmetic should be used, with 8 bits after the point, and the delay rate should be scaled up by $2^{20}$.  For phase calculations, the registers are already fixed point with \emph{all} the digits after the point, so no such adjustments are necessary.
+
+But all these calculations should be reviewed carefully before they are committed to FPGA.  All the calculations are available in a spreadsheet that accompanies this document.
+
+\begin{thebibliography}{80}
+\bibitem{hus} Hüseyin Özdemir \emph{Comparison of linear, cubic spline and akima interpolation methods} August 30, 2007
+
+\bibitem{mk4prob} Roger Cappallo
+\emph{Recently Discovered Model Problems in the Mark 4 Correlator}
+
+\bibitem{m101} Alan R Whitney
+\emph{Mark IV Memo 101: Addition of acceleration to Mark IV on-chip phase-rotator}
+27 October, 1992
+
+\bibitem{m123} Alan R Whitney 
+\emph{Mark 4 Memo 123: Implementation of Delay/Phase Tracking in the Mark IV correlator}
+20 November, 1992.
+
+\bibitem{m141}
+B. Anderson
+\emph{Mark 4 Memo 141: Straw Man SU Design}
+(Revision C 930302)
+\texttt{http://www.haystack.mit.edu/geo/mark4/memos/141.pdf}
+
+\bibitem{m140}
+\emph{Mark 4 Memo 140: The EVN/Mark IV Station Unit Requirements}
+  \texttt{http://www.haystack.mit.edu/geo/mark4/memos/140.pdf}
+1 March, 1993  
+
+\bibitem{man5b}
+MIT Haystack Observatory 
+\emph{Mark 5B System User’s Manual}
+8 August 2006 
+\texttt{http://www.haystack.edu/tech/vlbi/mark5/docs/Mark\%205B\%20users\%20manual.pdf}
+
+\bibitem{mk4}
+A R Whitney \emph{et al.} \emph{Mark 4 VLBI correlator: Architecture and algorithms}
+Radio Science, Vol.39,
+27 January 2004
+
+\bibitem{har1}
+Jonathan Hargreaves, email \texttt{<4F74966C020000F500004BD1@jive.nl>}
+
+\bibitem{har2}
+Jonathan Hargreaves, email \texttt{<4F75AACD020000F500004C10@jive.nl>}
+
+\bibitem{unib}
+Jonathan Hargreaves and Harro Verkouter, \emph{EVN Correlator Design} Version 2.0, 31 March, 2011
+
+\end{thebibliography}
+
+\end{document}
