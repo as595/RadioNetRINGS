@@ -1,0 +1,16 @@
+(defun query-decamelcase-word ()
+  "Turns camelCaseText into camel_case_text"
+  (interactive)
+  (setq case-fold-search nil)
+  (while (re-search-forward "[a-z][A-Z]" nil t)
+    (when (y-or-n-p "Do the thing? ")
+      (let ((start (progn (forward-word) (point)))
+            (end (progn (backward-word) (point))))
+        (replace-regexp "\\(.\\)\\([A-Z]\\)" "\\1_\\2" nil start end)
+        (backward-word)
+        (let ((end2 (progn (re-search-forward "[^a-zA-Z_]") (point)))
+              (start2 (progn (left-char) (re-search-backward "[^a-zA-Z_]") (point))))
+          (goto-char start2)
+          (downcase-region start2 end2))
+    (forward-word)))))
+

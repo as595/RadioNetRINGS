@@ -1,0 +1,2 @@
+flag.py - script to convert AIPS flagging files (in UVFLG format) into
+	CASA flagging command lists

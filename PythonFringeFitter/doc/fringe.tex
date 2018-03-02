@@ -1,0 +1,125 @@
+\documentclass[11pt, twoside, a4paper]{article}
+\usepackage{color}
+\usepackage{charter}
+\usepackage{tikz-cd}
+\usepackage[ruled]{algorithm2e}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{upquote}
+\usepackage{appendix}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{url}
+\usepackage[T1]{fontenc}  % access \textquotedbl
+\usepackage{textcomp}     % access \textquotesingle
+%\usepackage[backend=bibtex,natbib=true,
+%            citestyle=authoryear,style=authoryear,
+%            maxcitenames=2,maxbibnames=10]{biblatex}
+\usepackage{authblk}
+% \bibliography{papers}
+\mathchardef\mhyphen="2D
+\author[1]{Des Small}
+\affil[1]{JIVE}
+\title{What we talk about when we talk about manual phase-cal correction}
+\bibliographystyle{alpha}
+\begin{document}\sloppy
+\usetikzlibrary{decorations.pathmorphing}
+\maketitle
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true}
+
+\section{Introduction}
+
+Mao\cite{mao15} has argued. \cite{diamond}
+
+\section{Phase rates and/or delay rates}
+Plots of delay-rates from AIPS (see for example \cite{mao15}) use axes
+scaled in millihertz. The values are stored in the orthodox
+dimensionless form ($s/s$) in the solution tables, but for presentation
+they are scaled up by the frequency of the carrier wave, since the
+period of those waves determine the ``ambiguity time'' of the results.
+
+For C-band at $5\,\mathrm{GHz}$ a (high) rate of
+$1\,\mathrm{ps}/\mathrm{s}$ corresponds to $5\,\mathrm{MHz}$, so that
+phase will wrap in $200\,\mathrm{s}$.
+
+Appendix C of the AIPS manual (p. C-42) gives the ``residual phase''
+stored in solution and calibration tables as a result of fringe fitting
+as
+\begin{equation}
+  \begin{split}
+    \Phi_{i,c}(\nu, t) = &2\pi\left\{\nu_{i,0} - \nu_{0,0}\right\} \mathit{MB} \\
+    + &2\pi\left\{\nu_{i,c} - \nu_{i,0}\right\} \mathit{SB}_i \\
+    + &2\pi \nu_{i,c} \left\{t-t_0\right\} \mathit{RATE} + \theta_{i,c} 
+  \end{split}
+\end{equation}
+for channel $c$ of IF $i$, where $\mathit{MB}$ is the multi-band array, $\mathit{SB}_i$ is
+the single-band delay for band $i$, $\mathit{RATE}$ is the delay rate
+and $\theta_{i,c}$ is the ``peculiar phase'' for an IF and channel.
+
+Meanwhile, Schwab and Cotton express visibilities $\widetilde{V}_{ij}$ as 
+\begin{equation*}
+  \begin{split}
+  \widetilde{V}_{ij}(t_k, v_l) &\simeq a_i a_j \mathcal{V}_{ij}(t_0, \nu_0) 
+  \exp
+  \left\{i
+    \left[(\psi_i-\psi_j)(t_0, \nu_0) \right]
+  \right\} \\
+  &\times\exp
+  \left[i\left(
+      \left.
+        \frac{\partial (\psi_i-\psi_j + \phi_{ij})}{\partial t}
+      \right|_{t_0, \nu_0} (t_k-t_0) \right.\right.
+        \\
+      &+ \left.\left.\left.
+        \frac{\partial (\psi_i-\psi_j + \phi_{ij})}{\partial \nu}
+      \right|_{t_0, \nu_0} (\nu_l-\nu_0)
+      \right] \right),
+  \end{split}
+\end{equation*}
+with a true visibility of $\mathcal{V}_{ij}$,
+antenna gains of $a_i$,
+a model term of $\phi_{ij}$,
+and a grid of times, $t_k$,
+and frequencies, $\nu_l$ with origin at $t_0, \nu_0$.
+
+This is the natural form for 2-dimensional Fourier transform; the
+baseline delay-rate term in this form is 
+\[
+\left.\frac{\partial (\psi_i-\psi_j)}{\partial t} \right|_{t_0,
+    \nu_0} (t_k-t_0),
+\]
+Extracting a station-based rate and equating it with the AIPS form we have
+\begin{equation}
+  \frac{\partial \psi_i}{\partial t} (t_k - t_0) \simeq
+  2\pi \nu_{i,c} \left\{t-t_0\right\} \mathit{RATE} 
+\end{equation}
+
+
+\begin{thebibliography}{99} 
+\bibitem[Mao, 2015]{mao15}{\it Very Long Baseline Interferometry: Tutorial 6 at ERIS 2015}
+\\ \url{http://www.jive.eu/~mao/ERIS2015/T6.html}
+
+\bibitem[Diamond, 1995]{diamond} Diamond, P.J. (1995)
+  {\it Chapter 12: VLBI Data Reduction in Practice} in {\it Zenus et  al. (Eds) 1995}
+
+\bibitem[Cotton, 1995]{Cotton95} Cotton, W.D. (1995) {\it
+  Fringe-Fitting} in {\it Zenus et  al. (Eds)} (1995)
+
+  
+\bibitem[Zenus \emph{et al.} (Eds), 1995]{zensus} Zensus, J.A., Diamond, P.J.,
+  Napier, P.J. {\it Very Long Baseline Interferometry and the VLBA},
+  ASP Conference Series, Vol. 82, 1995
+\end{thebibliography}
+%% \printbibliography
+\end{document}
+
+\begin{figure}
+  \centering
+  \includegraphics[height=8cm]{afigure.eps}
+  \caption{A caption}
+  \label{fig:finalEngine}
+\end{figure}
+
+
+
+
